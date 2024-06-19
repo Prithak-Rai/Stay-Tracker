@@ -46,6 +46,7 @@ while cap.isOpened():
     # Break the loop on pressing 'q'
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
+    
 
 # Release the video capture object and close all windows
 cap.release()
