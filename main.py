@@ -18,6 +18,7 @@ while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
         break
+    
 
     # Resize the frame to improve processing speed
     frame = cv2.resize(frame, (600, 600))
