@@ -18,7 +18,6 @@ while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
         break
-    
 
     # Resize the frame to improve processing speed
     frame = cv2.resize(frame, (600, 600))
@@ -76,6 +75,6 @@ while cap.isOpened():
         break
 
 # Release the video capture object and close all windows
+# Release the video capture object and close all windows
 cap.release()
 cv2.destroyAllWindows()
-
