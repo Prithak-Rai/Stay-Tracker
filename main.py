@@ -1,3 +1,4 @@
+import os
 import cv2
 import numpy as np
 import datetime
@@ -12,17 +13,23 @@ class CentroidTracker():
         self.bounding_boxes = OrderedDict()  # Store bounding boxes
         self.disappeared = OrderedDict()
         self.maxDisappeared = maxDisappeared
+        self.start_times = OrderedDict()  # Store start times for each person
+        self.snapshot_count = OrderedDict()  # Store snapshot count for each person
 
     def register(self, centroid, bbox):
         self.objects[self.nextObjectID] = centroid
         self.bounding_boxes[self.nextObjectID] = bbox  # Register bounding box
         self.disappeared[self.nextObjectID] = 0
+        self.start_times[self.nextObjectID] = datetime.datetime.now()
+        self.snapshot_count[self.nextObjectID] = 0
         self.nextObjectID += 1
 
     def deregister(self, objectID):
         del self.objects[objectID]
         del self.bounding_boxes[objectID]  # Deregister bounding box
         del self.disappeared[objectID]
+        del self.start_times[objectID]
+        del self.snapshot_count[objectID]
 
     def update(self, rects):
         if len(rects) == 0:
@@ -80,15 +87,23 @@ class CentroidTracker():
 
         return self.objects
 
-# Initialize centroid tracker and start times dictionary
+# Function to create folder if it does not exist
+def create_folder_if_not_exists(folder_path):
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+
+# Initialize centroid tracker
 ct = CentroidTracker()
-start_times = {}
+snapshots_dir = 'snapshots/'  # Path to snapshots directory
+
+# Ensure snapshots directory exists
+create_folder_if_not_exists(snapshots_dir)
 
 # Load pre-trained MobileNet SSD model and configuration
 net = cv2.dnn.readNetFromCaffe('files/deploy.prototxt', 'files/mobilenet_iter_73000.caffemodel')
 
-cap = cv2.VideoCapture('Vid/c.mp4')
-# cap = cv2.VideoCapture(0)
+# cap = cv2.VideoCapture('Vid/c.mp4')
+cap = cv2.VideoCapture(0)
 # cap = cv2.VideoCapture("http://192.168.0.103:8080/video")
 
 while cap.isOpened():
@@ -121,16 +136,27 @@ while cap.isOpened():
         (startX, startY, endX, endY) = ct.bounding_boxes[objectID]
         cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 255, 0), 2)
 
-        if objectID not in start_times:
-            start_times[objectID] = datetime.datetime.now()
-
-        duration = datetime.datetime.now() - start_times[objectID]
+        duration = datetime.datetime.now() - ct.start_times[objectID]
         days, seconds = duration.days, duration.seconds
         hours = seconds // 3600
         minutes = (seconds % 3600) // 60
         seconds = seconds % 60
-        duration_text = f"{days}d {hours}h {minutes}m {seconds}s"
-        cv2.putText(frame, duration_text, (startX, startY - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        total_duration_text = f"Total time: {days}d {hours}h {minutes}m {seconds}s"
+
+        cv2.putText(frame, total_duration_text, (startX, startY - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+        # Save total tracked time to text file
+        person_folder = os.path.join(snapshots_dir, f"person_{objectID}")
+        create_folder_if_not_exists(person_folder)
+        time_filename = os.path.join(person_folder, "tracked_time.txt")
+        with open(time_filename, 'w') as f:
+            f.write(total_duration_text)
+
+        # Capture and save snapshots 5 times
+        if ct.snapshot_count[objectID] < 5:
+            snapshot_filename = os.path.join(person_folder, f"snapshot_{ct.snapshot_count[objectID]}.jpg")
+            cv2.imwrite(snapshot_filename, frame)
+            ct.snapshot_count[objectID] += 1
 
     cv2.imshow('Person Detection', frame)
 
