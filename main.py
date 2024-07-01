@@ -4,6 +4,7 @@ import numpy as np
 import datetime
 from collections import OrderedDict
 from scipy.spatial import distance as dist
+import face_recognition
 
 # Centroid Tracker class
 class CentroidTracker():
@@ -102,9 +103,9 @@ create_folder_if_not_exists(snapshots_dir)
 # Load pre-trained MobileNet SSD model and configuration
 net = cv2.dnn.readNetFromCaffe('files/deploy.prototxt', 'files/mobilenet_iter_73000.caffemodel')
 
-# cap = cv2.VideoCapture('Vid/c.mp4')
-cap = cv2.VideoCapture(0)
-# cap = cv2.VideoCapture("http://192.168.0.103:8080/video")
+# Load video from webcam
+# cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture('Vid/c.mp4')
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -136,13 +137,13 @@ while cap.isOpened():
         (startX, startY, endX, endY) = ct.bounding_boxes[objectID]
         cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 255, 0), 2)
 
+        # Calculate and display the total tracked time
         duration = datetime.datetime.now() - ct.start_times[objectID]
         days, seconds = duration.days, duration.seconds
         hours = seconds // 3600
         minutes = (seconds % 3600) // 60
         seconds = seconds % 60
         total_duration_text = f"Total time: {days}d {hours}h {minutes}m {seconds}s"
-
         cv2.putText(frame, total_duration_text, (startX, startY - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
         # Save total tracked time to text file
@@ -152,17 +153,26 @@ while cap.isOpened():
         with open(time_filename, 'w') as f:
             f.write(total_duration_text)
 
-        # Capture and save snapshots 5 times
-        if ct.snapshot_count[objectID] < 5:
+        # Check if snapshots already exist
+        if not os.path.exists(person_folder) or ct.snapshot_count[objectID] < 5:
+            # Ensure the bounding box coordinates are within the frame boundaries
+            if startX < 0: startX = 0
+            if startY < 0: startY = 0
+            if endX > width: endX = width
+            if endY > height: endY = height
+
+            # Capture and save snapshots (only 5 snapshots per person)
             snapshot_filename = os.path.join(person_folder, f"snapshot_{ct.snapshot_count[objectID]}.jpg")
-            cv2.imwrite(snapshot_filename, frame)
-            ct.snapshot_count[objectID] += 1
+            # Crop the bounding box region for the snapshot
+            person_image = frame[startY:endY, startX:endX]
+            if person_image.size > 0:
+                cv2.imwrite(snapshot_filename, person_image)
+                ct.snapshot_count[objectID] += 1
 
     cv2.imshow('Person Detection', frame)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
-
 
 cap.release()
 cv2.destroyAllWindows()
