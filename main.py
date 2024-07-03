@@ -103,7 +103,6 @@ create_folder_if_not_exists(snapshots_dir)
 # Load pre-trained MobileNet SSD model and configuration
 net = cv2.dnn.readNetFromCaffe('files/deploy.prototxt', 'files/mobilenet_iter_73000.caffemodel')
 
-
 # Load video from webcam
 # cap = cv2.VideoCapture(0)
 cap = cv2.VideoCapture('Vid/c.mp4')
