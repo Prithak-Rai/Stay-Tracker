@@ -196,6 +196,7 @@ while cap.isOpened():
             roi_startY = max(0, roi_endY - FRAME_HEIGHT)
             frame = frame[roi_startY:roi_endY, roi_startX:roi_endX]
 
+
     # Display the frame with annotations
     cv2.imshow('Person Detection', frame)
 
