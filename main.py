@@ -169,7 +169,6 @@ while cap.isOpened():
                 cv2.imwrite(snapshot_filename, person_image)
                 ct.snapshot_count[objectID] += 1
 
-
     cv2.imshow('Person Detection', frame)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
