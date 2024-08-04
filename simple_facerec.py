@@ -10,8 +10,9 @@ class SimpleFacerec:
         self.frame_resizing = 0.25
 
     def load_encoding_images(self, images_path):
+        valid_extensions = ('.png', '.jpg', '.jpeg')  # Add any other image file extensions if needed
         images_path = os.path.join(images_path)
-        image_filenames = [f for f in os.listdir(images_path) if os.path.isfile(os.path.join(images_path, f))]
+        image_filenames = [f for f in os.listdir(images_path) if os.path.isfile(os.path.join(images_path, f)) and f.lower().endswith(valid_extensions)]
 
         for image_filename in image_filenames:
             try:
@@ -22,7 +23,7 @@ class SimpleFacerec:
                     self.known_face_names.append(os.path.splitext(image_filename)[0])
             except Exception as e:
                 print(f"Error processing file {image_filename}: {e}")
-                
+
         print(f"{len(self.known_face_encodings)} encoding images found.")
         print("Encoding images loaded")
 
