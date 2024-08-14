@@ -110,5 +110,5 @@ while True:
 cap.release()
 cv2.destroyAllWindows()
 
-# Close the database connection
+
 conn.close()
