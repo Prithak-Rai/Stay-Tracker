@@ -106,7 +106,7 @@ while True:
     if key == ord("q"):
         break
 
-# Release the camera and close windows
+
 cap.release()
 cv2.destroyAllWindows()
 
