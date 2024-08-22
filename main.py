@@ -54,7 +54,6 @@ def store_face_data(name, timestamp, image_blob):
 while True:
     ret, frame = cap.read()
 
-    # Detect faces
     face_locations, face_names = sfr.detect_known_faces(frame)
     
     current_time = time.time()
