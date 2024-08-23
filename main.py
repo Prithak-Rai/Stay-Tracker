@@ -25,7 +25,6 @@ unknown_person_count = 0
 conn = sqlite3.connect('face_data.db')
 cursor = conn.cursor()
 
-# Create table if not exists
 cursor.execute('''CREATE TABLE IF NOT EXISTS face_data (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT,
