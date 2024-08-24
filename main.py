@@ -21,7 +21,6 @@ for i in range(4):
 face_detection_times = {}
 unknown_person_count = 0  
 
-# Set up SQLite database
 conn = sqlite3.connect('face_data.db')
 cursor = conn.cursor()
 
