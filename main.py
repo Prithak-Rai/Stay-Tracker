@@ -17,7 +17,6 @@ for i in range(4):
         print(f"Using camera with index {i}")
         break
 
-# Initialize tracking variables
 face_detection_times = {}
 unknown_person_count = 0  
 
