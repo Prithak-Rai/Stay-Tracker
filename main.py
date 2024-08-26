@@ -5,7 +5,6 @@ import time
 import os
 import sqlite3
 
-# Load the face encoding model
 sfr = SimpleFacerec()
 sfr.load_encoding_images("Images/")
 
