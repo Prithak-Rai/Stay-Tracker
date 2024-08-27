@@ -8,7 +8,6 @@ import sqlite3
 sfr = SimpleFacerec()
 sfr.load_encoding_images("Images/")
 
-# Initialize camera
 cap = None
 for i in range(4):
     cap = cv2.VideoCapture(i)
