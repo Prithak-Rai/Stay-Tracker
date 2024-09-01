@@ -21,7 +21,6 @@ if not cap.isOpened():
     print("Camera not found or cannot be opened.")
     exit()
 
-# Track detection times
 face_detection_times = {}
 unknown_person_count = 0  
 
