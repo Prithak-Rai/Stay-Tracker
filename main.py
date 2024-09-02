@@ -5,11 +5,11 @@ import time
 import os
 import sqlite3
 
-# Load encoding images
+# Initialize the face recognition and encoding module
 sfr = SimpleFacerec()
 sfr.load_encoding_images("Images/")
 
-# Initialize camera
+# Set up camera capture
 cap = None
 for i in range(4):
     cap = cv2.VideoCapture(i)
@@ -21,13 +21,11 @@ if not cap.isOpened():
     print("Camera not found or cannot be opened.")
     exit()
 
-face_detection_times = {}
-unknown_person_count = 0  
-
-# Initialize database
+# Initialize SQLite connection and cursor
 conn = sqlite3.connect('face_data.db')
 cursor = conn.cursor()
 
+# Create table if it doesn't exist
 cursor.execute('''CREATE TABLE IF NOT EXISTS face_data (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT,
@@ -35,16 +33,21 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS face_data (
                     image BLOB
                   )''')
 
+# Function to save face snapshot as BLOB
 def save_snapshot(image, face_loc):
     y1, x2, y2, x1 = face_loc
     face_image = image[y1:y2, x1:x2]
     _, buffer = cv2.imencode('.jpg', face_image)
     return buffer.tobytes()
 
+# Function to store face data in the database
 def store_face_data(name, timestamp, image_blob):
     cursor.execute("INSERT INTO face_data (name, timestamp, image) VALUES (?, ?, ?)", 
                    (name, timestamp, image_blob))
     conn.commit()
+
+face_detection_times = {}
+unknown_person_count = 0  
 
 while True:
     ret, frame = cap.read()
@@ -53,26 +56,25 @@ while True:
         print("Failed to grab frame")
         break
 
-    # Convert the frame from BGR (OpenCV format) to RGB (face_recognition format)
+    # Convert the frame to RGB
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
+    # Detect known faces
     face_locations, face_names = sfr.detect_known_faces(rgb_frame)
 
     current_time = time.time()
     for face_loc, name in zip(face_locations, face_names):
         y1, x2, y2, x1 = face_loc
-
         identifier = (x1, y1, x2, y2, name)
 
         if identifier not in face_detection_times:
             face_detection_times[identifier] = current_time
-        
+
         elapsed_time = current_time - face_detection_times[identifier]
         hours, remainder = divmod(int(elapsed_time), 3600)
         minutes, seconds = divmod(remainder, 60)
-        
         time_str = f"{hours:02}:{minutes:02}:{seconds:02}"
-        
+
         if name == "Unknown":
             b, g, r = 0, 0, 255
 
@@ -91,18 +93,18 @@ while True:
                         store_face_data(name, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time)), image_blob)
         else:
             b, g, r = 0, 255, 0
-        
+
         font_scale = 1.5
         cv2.putText(frame, f"{name} - {time_str}", (x1, y2 + 30), cv2.FONT_HERSHEY_COMPLEX_SMALL, font_scale, (b, g, r), 2)
         cv2.rectangle(frame, (x1, y1), (x2, y2), (b, g, r), 2)
-    
+
     cv2.imshow("Frame", frame)
 
     key = cv2.waitKey(1)
     if key == ord("q"):
         break
 
+# Release resources
 cap.release()
 cv2.destroyAllWindows()
-
 conn.close()

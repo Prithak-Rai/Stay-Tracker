@@ -16,8 +16,19 @@ class SimpleFacerec:
 
         for image_filename in image_filenames:
             try:
-                image = face_recognition.load_image_file(os.path.join(images_path, image_filename))
-                encoding = face_recognition.face_encodings(image)
+                image_path = os.path.join(images_path, image_filename)
+                
+                # Load image using OpenCV to ensure it's in correct format
+                img = cv2.imread(image_path)
+                if img is None:
+                    print(f"Error reading file {image_filename}: Unable to read image.")
+                    continue
+                
+                # Convert BGR to RGB
+                rgb_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                
+                # Get face encodings
+                encoding = face_recognition.face_encodings(rgb_image)
                 if encoding:
                     self.known_face_encodings.append(encoding[0])
                     self.known_face_names.append(os.path.splitext(image_filename)[0])
