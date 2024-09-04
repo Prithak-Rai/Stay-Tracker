@@ -1,15 +1,48 @@
 import cv2
 import face_recognition
-from simple_facerec import SimpleFacerec
-import time
-import os
 import sqlite3
+import time
+import numpy as np
 
-# Initialize the face recognition and encoding module
-sfr = SimpleFacerec()
-sfr.load_encoding_images("Images/")
+# Connect to the database
+def connect_db():
+    return sqlite3.connect('face_data.db')
 
-# Set up camera capture
+def load_encodings_from_db(cursor):
+    cursor.execute("SELECT name, image FROM face_data")
+    encodings = []
+    names = []
+    for row in cursor.fetchall():
+        name = row[0]
+        image_blob = row[1]
+        image_array = cv2.imdecode(np.frombuffer(image_blob, np.uint8), cv2.IMREAD_COLOR)
+        face_encodings = face_recognition.face_encodings(image_array)
+        if face_encodings:
+            encodings.append(face_encodings[0])
+            names.append(name)
+    return encodings, names
+
+def save_snapshot(image, face_loc):
+    y1, x2, y2, x1 = face_loc
+    face_image = image[y1:y2, x1:x2]
+    _, buffer = cv2.imencode('.jpg', face_image)
+    return buffer.tobytes()
+
+def store_face_data(cursor, name, timestamp, image_blob):
+    cursor.execute("INSERT INTO face_data (name, timestamp, image) VALUES (?, ?, ?)", 
+                   (name, timestamp, image_blob))
+    conn.commit()
+
+def update_timestamp(cursor, name, timestamp):
+    cursor.execute("UPDATE face_data SET timestamp = ? WHERE name = ?", (timestamp, name))
+    conn.commit()
+
+# Load encodings and names from the database
+conn = connect_db()
+cursor = conn.cursor()
+known_face_encodings, known_face_names = load_encodings_from_db(cursor)
+
+# Initialize video capture
 cap = None
 for i in range(4):
     cap = cv2.VideoCapture(i)
@@ -19,91 +52,70 @@ for i in range(4):
 
 if not cap.isOpened():
     print("Camera not found or cannot be opened.")
+    conn.close()
     exit()
-
-# Initialize SQLite connection and cursor
-conn = sqlite3.connect('face_data.db')
-cursor = conn.cursor()
-
-# Create table if it doesn't exist
-cursor.execute('''CREATE TABLE IF NOT EXISTS face_data (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT,
-                    timestamp TEXT,
-                    image BLOB
-                  )''')
-
-# Function to save face snapshot as BLOB
-def save_snapshot(image, face_loc):
-    y1, x2, y2, x1 = face_loc
-    face_image = image[y1:y2, x1:x2]
-    _, buffer = cv2.imencode('.jpg', face_image)
-    return buffer.tobytes()
-
-# Function to store face data in the database
-def store_face_data(name, timestamp, image_blob):
-    cursor.execute("INSERT INTO face_data (name, timestamp, image) VALUES (?, ?, ?)", 
-                   (name, timestamp, image_blob))
-    conn.commit()
 
 face_detection_times = {}
 unknown_person_count = 0  
 
-while True:
-    ret, frame = cap.read()
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Failed to grab frame")
+            break
 
-    if not ret:
-        print("Failed to grab frame")
-        break
+        # Resize the frame for faster processing
+        original_shape = frame.shape
+        frame_small = cv2.resize(frame, (640, 480))
+        rgb_frame = cv2.cvtColor(frame_small, cv2.COLOR_BGR2RGB)
+        
+        face_locations = face_recognition.face_locations(rgb_frame)
+        face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
 
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        current_time = time.time()
+        timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time))
 
-    # Detect known faces
-    face_locations, face_names = sfr.detect_known_faces(rgb_frame)
+        for face_encoding, face_loc in zip(face_encodings, face_locations):
+            matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
+            name = "Unknown"
 
-    current_time = time.time()
-    for face_loc, name in zip(face_locations, face_names):
-        y1, x2, y2, x1 = face_loc
-        identifier = (x1, y1, x2, y2, name)
+            if True in matches:
+                first_match_index = matches.index(True)
+                name = known_face_names[first_match_index]
+                update_timestamp(cursor, name, timestamp_str)
+            else:
+                unknown_person_count += 1
+                image_blob = save_snapshot(frame, face_loc)
+                store_face_data(cursor, name, timestamp_str, image_blob)
 
-        if identifier not in face_detection_times:
-            face_detection_times[identifier] = current_time
+            # Adjust the bounding box coordinates
+            scale_x = original_shape[1] / 640
+            scale_y = original_shape[0] / 480
+            y1, x2, y2, x1 = [int(coord * scale) for coord, scale in zip(face_loc, [scale_y, scale_x, scale_y, scale_x])]
+            
+            identifier = (x1, y1, x2, y2, name)
 
-        elapsed_time = current_time - face_detection_times[identifier]
-        hours, remainder = divmod(int(elapsed_time), 3600)
-        minutes, seconds = divmod(remainder, 60)
-        time_str = f"{hours:02}:{minutes:02}:{seconds:02}"
+            if identifier not in face_detection_times:
+                face_detection_times[identifier] = current_time
 
-        if name == "Unknown":
-            b, g, r = 0, 0, 255
+            elapsed_time = current_time - face_detection_times[identifier]
+            hours, remainder = divmod(int(elapsed_time), 3600)
+            minutes, seconds = divmod(remainder, 60)
+            time_str = f"{hours:02}:{minutes:02}:{seconds:02}"
 
-            if elapsed_time > 2: 
-                face_encodings = face_recognition.face_encodings(rgb_frame, [face_loc])
+            b, g, r = (0, 0, 255) if name == "Unknown" else (0, 255, 0)
 
-                if face_encodings:
-                    unknown_encoding = face_encodings[0]
-                    matches = face_recognition.compare_faces(sfr.known_face_encodings, unknown_encoding)
-                    if any(matches):
-                        match_index = matches.index(True)
-                        name = sfr.known_face_names[match_index]
-                    else:
-                        unknown_person_count += 1
-                        image_blob = save_snapshot(frame, face_loc)
-                        store_face_data(name, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time)), image_blob)
-        else:
-            b, g, r = 0, 255, 0
+            font_scale = 1.5
+            cv2.putText(frame, f"{name} - {time_str}", (x1, y2 + 30), cv2.FONT_HERSHEY_COMPLEX_SMALL, font_scale, (b, g, r), 2)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (b, g, r), 2)
 
-        font_scale = 1.5
-        cv2.putText(frame, f"{name} - {time_str}", (x1, y2 + 30), cv2.FONT_HERSHEY_COMPLEX_SMALL, font_scale, (b, g, r), 2)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (b, g, r), 2)
+        cv2.imshow("Frame", frame)
 
-    cv2.imshow("Frame", frame)
-
-    key = cv2.waitKey(1)
-    if key == ord("q"):
-        break
-
-# Release resources
-cap.release()
-cv2.destroyAllWindows()
-conn.close()
+        key = cv2.waitKey(1)
+        if key == ord("q"):
+            break
+finally:
+    cap.release()
+    cv2.destroyAllWindows()
+    conn.close()
