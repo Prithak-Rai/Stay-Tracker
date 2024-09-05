@@ -4,7 +4,6 @@ import sqlite3
 import time
 import numpy as np
 
-# Connect to the database
 def connect_db():
     return sqlite3.connect('face_data.db')
 
@@ -22,8 +21,17 @@ def load_encodings_from_db(cursor):
             names.append(name)
     return encodings, names
 
-def save_snapshot(image, face_loc):
+def save_snapshot(image, face_loc, original_shape):
     y1, x2, y2, x1 = face_loc
+    scale_x = original_shape[1] / 640
+    scale_y = original_shape[0] / 480
+    x1, x2, y1, y2 = [int(coord * scale) for coord, scale in zip([x1, x2, y1, y2], [scale_x, scale_x, scale_y, scale_y])]
+    
+    x1 = max(0, x1)
+    x2 = min(original_shape[1], x2)
+    y1 = max(0, y1)
+    y2 = min(original_shape[0], y2)
+    
     face_image = image[y1:y2, x1:x2]
     _, buffer = cv2.imencode('.jpg', face_image)
     return buffer.tobytes()
@@ -37,12 +45,10 @@ def update_timestamp(cursor, name, timestamp):
     cursor.execute("UPDATE face_data SET timestamp = ? WHERE name = ?", (timestamp, name))
     conn.commit()
 
-# Load encodings and names from the database
 conn = connect_db()
 cursor = conn.cursor()
 known_face_encodings, known_face_names = load_encodings_from_db(cursor)
 
-# Initialize video capture
 cap = None
 for i in range(4):
     cap = cv2.VideoCapture(i)
@@ -65,7 +71,6 @@ try:
             print("Failed to grab frame")
             break
 
-        # Resize the frame for faster processing
         original_shape = frame.shape
         frame_small = cv2.resize(frame, (640, 480))
         rgb_frame = cv2.cvtColor(frame_small, cv2.COLOR_BGR2RGB)
@@ -86,10 +91,11 @@ try:
                 update_timestamp(cursor, name, timestamp_str)
             else:
                 unknown_person_count += 1
-                image_blob = save_snapshot(frame, face_loc)
+                image_blob = save_snapshot(frame, face_loc, original_shape)  # Pass original_shape here
                 store_face_data(cursor, name, timestamp_str, image_blob)
+                known_face_encodings.append(face_encoding)
+                known_face_names.append(name)
 
-            # Adjust the bounding box coordinates
             scale_x = original_shape[1] / 640
             scale_y = original_shape[0] / 480
             y1, x2, y2, x1 = [int(coord * scale) for coord, scale in zip(face_loc, [scale_y, scale_x, scale_y, scale_x])]
