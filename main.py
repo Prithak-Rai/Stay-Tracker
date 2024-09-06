@@ -26,7 +26,7 @@ def save_snapshot(image, face_loc, original_shape):
     scale_x = original_shape[1] / 640
     scale_y = original_shape[0] / 480
     x1, x2, y1, y2 = [int(coord * scale) for coord, scale in zip([x1, x2, y1, y2], [scale_x, scale_x, scale_y, scale_y])]
-    
+
     x1 = max(0, x1)
     x2 = min(original_shape[1], x2)
     y1 = max(0, y1)
