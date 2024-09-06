@@ -46,9 +46,13 @@ def get_or_create_person(cursor, name):
     conn.commit()
     return cursor.lastrowid  # return newly inserted person_id
 
-def store_photo_data(cursor, person_id, timestamp, image_blob):
-    cursor.execute("INSERT INTO photos (person_id, timestamp, image) VALUES (?, ?, ?)", 
-                   (person_id, timestamp, image_blob))
+def store_photo_data(cursor, person_id, last_seen, timestamp, image_blob):
+    cursor.execute("INSERT INTO photos (person_id, last_seen, timestamp, image) VALUES (?, ?, ?, ?)", 
+                   (person_id, last_seen, timestamp, image_blob))
+    conn.commit()
+
+def update_last_seen(cursor, person_id, last_seen):
+    cursor.execute("UPDATE photos SET last_seen = ? WHERE person_id = ?", (last_seen, person_id))
     conn.commit()
 
 def update_timestamp(cursor, person_id, timestamp):
@@ -99,12 +103,12 @@ try:
                 first_match_index = matches.index(True)
                 name = known_face_names[first_match_index]
                 person_id = get_or_create_person(cursor, name)
-                update_timestamp(cursor, person_id, timestamp_str)
+                update_last_seen(cursor, person_id, timestamp_str)
             else:
                 unknown_person_count += 1
                 person_id = get_or_create_person(cursor, name)
                 image_blob = save_snapshot(frame, face_loc, original_shape)
-                store_photo_data(cursor, person_id, timestamp_str, image_blob)
+                store_photo_data(cursor, person_id, timestamp_str, "0:00:00", image_blob)
                 known_face_encodings.append(face_encoding)
                 known_face_names.append(name)
 
@@ -121,6 +125,10 @@ try:
             hours, remainder = divmod(int(elapsed_time), 3600)
             minutes, seconds = divmod(remainder, 60)
             time_str = f"{hours:02}:{minutes:02}:{seconds:02}"
+
+            # Update timestamp in the database
+            person_id = get_or_create_person(cursor, name)
+            update_timestamp(cursor, person_id, time_str)
 
             b, g, r = (0, 0, 255) if name == "Unknown" else (0, 255, 0)
 
