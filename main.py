@@ -8,12 +8,13 @@ def connect_db():
     return sqlite3.connect('face_data.db')
 
 def load_encodings_from_db(cursor):
-    cursor.execute("SELECT name, image FROM face_data")
+    cursor.execute("SELECT p.id, p.name, ph.image FROM person p INNER JOIN photos ph ON p.id = ph.person_id")
     encodings = []
     names = []
     for row in cursor.fetchall():
-        name = row[0]
-        image_blob = row[1]
+        person_id = row[0]
+        name = row[1]
+        image_blob = row[2]
         image_array = cv2.imdecode(np.frombuffer(image_blob, np.uint8), cv2.IMREAD_COLOR)
         face_encodings = face_recognition.face_encodings(image_array)
         if face_encodings:
@@ -36,13 +37,22 @@ def save_snapshot(image, face_loc, original_shape):
     _, buffer = cv2.imencode('.jpg', face_image)
     return buffer.tobytes()
 
-def store_face_data(cursor, name, timestamp, image_blob):
-    cursor.execute("INSERT INTO face_data (name, timestamp, image) VALUES (?, ?, ?)", 
-                   (name, timestamp, image_blob))
+def get_or_create_person(cursor, name):
+    cursor.execute("SELECT id FROM person WHERE name = ?", (name,))
+    result = cursor.fetchone()
+    if result:
+        return result[0]  # return person_id
+    cursor.execute("INSERT INTO person (name) VALUES (?)", (name,))
+    conn.commit()
+    return cursor.lastrowid  # return newly inserted person_id
+
+def store_photo_data(cursor, person_id, timestamp, image_blob):
+    cursor.execute("INSERT INTO photos (person_id, timestamp, image) VALUES (?, ?, ?)", 
+                   (person_id, timestamp, image_blob))
     conn.commit()
 
-def update_timestamp(cursor, name, timestamp):
-    cursor.execute("UPDATE face_data SET timestamp = ? WHERE name = ?", (timestamp, name))
+def update_timestamp(cursor, person_id, timestamp):
+    cursor.execute("UPDATE photos SET timestamp = ? WHERE person_id = ?", (timestamp, person_id))
     conn.commit()
 
 conn = connect_db()
@@ -88,11 +98,13 @@ try:
             if True in matches:
                 first_match_index = matches.index(True)
                 name = known_face_names[first_match_index]
-                update_timestamp(cursor, name, timestamp_str)
+                person_id = get_or_create_person(cursor, name)
+                update_timestamp(cursor, person_id, timestamp_str)
             else:
                 unknown_person_count += 1
-                image_blob = save_snapshot(frame, face_loc, original_shape)  # Pass original_shape here
-                store_face_data(cursor, name, timestamp_str, image_blob)
+                person_id = get_or_create_person(cursor, name)
+                image_blob = save_snapshot(frame, face_loc, original_shape)
+                store_photo_data(cursor, person_id, timestamp_str, image_blob)
                 known_face_encodings.append(face_encoding)
                 known_face_names.append(name)
 
