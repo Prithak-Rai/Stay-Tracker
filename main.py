@@ -59,6 +59,13 @@ def update_timestamp(cursor, person_id, timestamp):
     cursor.execute("UPDATE photos SET timestamp = ? WHERE person_id = ?", (timestamp, person_id))
     conn.commit()
 
+def retrieve_last_seen(cursor, person_id):
+    cursor.execute("SELECT last_seen FROM photos WHERE person_id = ?", (person_id,))
+    result = cursor.fetchone()
+    if result:
+        return result[0]
+    return None
+
 conn = connect_db()
 cursor = conn.cursor()
 known_face_encodings, known_face_names = load_encodings_from_db(cursor)
@@ -103,6 +110,7 @@ try:
                 first_match_index = matches.index(True)
                 name = known_face_names[first_match_index]
                 person_id = get_or_create_person(cursor, name)
+                last_seen = retrieve_last_seen(cursor, person_id)
                 update_last_seen(cursor, person_id, timestamp_str)
             else:
                 unknown_person_count += 1
@@ -126,7 +134,6 @@ try:
             minutes, seconds = divmod(remainder, 60)
             time_str = f"{hours:02}:{minutes:02}:{seconds:02}"
 
-            # Update timestamp in the database
             person_id = get_or_create_person(cursor, name)
             update_timestamp(cursor, person_id, time_str)
 
