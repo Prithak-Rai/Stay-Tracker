@@ -41,10 +41,10 @@ def get_or_create_person(cursor, name):
     cursor.execute("SELECT id FROM person WHERE name = ?", (name,))
     result = cursor.fetchone()
     if result:
-        return result[0]  # return person_id
+        return result[0] 
     cursor.execute("INSERT INTO person (name) VALUES (?)", (name,))
     conn.commit()
-    return cursor.lastrowid  # return newly inserted person_id
+    return cursor.lastrowid  
 
 def store_photo_data(cursor, person_id, last_seen, timestamp, image_blob):
     cursor.execute("INSERT INTO photos (person_id, last_seen, timestamp, image) VALUES (?, ?, ?, ?)", 
@@ -85,7 +85,7 @@ if not cap.isOpened():
 face_detection_times = {}
 last_seen_times = {}
 unknown_person_count = 0  
-timeout_duration = 2  # Number of seconds after which a person is considered "gone"
+timeout_duration = 2  
 
 try:
     while True:
@@ -104,7 +104,6 @@ try:
         current_time = time.time()
         timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time))
 
-        # Create a list of currently detected person_ids
         current_detected_person_ids = []
 
         for face_encoding, face_loc in zip(face_encodings, face_locations):
@@ -125,17 +124,14 @@ try:
                 known_face_encodings.append(face_encoding)
                 known_face_names.append(name)
 
-            # Mark the person as seen in this frame
             current_detected_person_ids.append(person_id)
 
-            # Use person_id as the stable identifier
             identifier = person_id
 
             if identifier not in face_detection_times:
-                face_detection_times[identifier] = current_time  # Initialize the timer for this person
-                last_seen_times[identifier] = current_time  # Initialize last seen time
+                face_detection_times[identifier] = current_time  
+                last_seen_times[identifier] = current_time 
 
-            # Update last seen time for this person
             last_seen_times[identifier] = current_time
 
             elapsed_time = current_time - face_detection_times[identifier]
@@ -147,7 +143,6 @@ try:
 
             b, g, r = (0, 0, 255) if name == "Unknown" else (0, 255, 0)
 
-            # Scaling the face location back to the original frame size
             scale_x = original_shape[1] / 640
             scale_y = original_shape[0] / 480
             y1, x2, y2, x1 = [int(coord * scale) for coord, scale in zip(face_loc, [scale_y, scale_x, scale_y, scale_x])]
@@ -156,12 +151,11 @@ try:
             cv2.putText(frame, f"{name} - {time_str}", (x1, y2 + 30), cv2.FONT_HERSHEY_COMPLEX_SMALL, font_scale, (b, g, r), 2)
             cv2.rectangle(frame, (x1, y1), (x2, y2), (b, g, r), 2)
 
-        # Check if any previously detected person has not been seen for `timeout_duration` seconds
         for person_id in list(last_seen_times.keys()):
             if person_id not in current_detected_person_ids:
                 if current_time - last_seen_times[person_id] > timeout_duration:
-                    del face_detection_times[person_id]  # Stop the timer for this person
-                    del last_seen_times[person_id]  # Remove them from last seen tracking
+                    del face_detection_times[person_id] 
+                    del last_seen_times[person_id]  
 
         cv2.imshow("Frame", frame)
 
