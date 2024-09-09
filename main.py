@@ -166,3 +166,4 @@ finally:
     cap.release()
     cv2.destroyAllWindows()
     conn.close()
+    
