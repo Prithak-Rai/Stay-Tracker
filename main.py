@@ -12,9 +12,7 @@ def load_encodings_from_db(cursor):
     encodings = []
     names = []
     for row in cursor.fetchall():
-        person_id = row[0]
-        name = row[1]
-        image_blob = row[2]
+        person_id, name, image_blob = row
         image_array = cv2.imdecode(np.frombuffer(image_blob, np.uint8), cv2.IMREAD_COLOR)
         face_encodings = face_recognition.face_encodings(image_array)
         if face_encodings:
@@ -22,147 +20,130 @@ def load_encodings_from_db(cursor):
             names.append(name)
     return encodings, names
 
-def save_snapshot(image, face_loc, original_shape):
+def save_snapshot(image, face_loc):
     y1, x2, y2, x1 = face_loc
-    scale_x = original_shape[1] / 640
-    scale_y = original_shape[0] / 480
-    x1, x2, y1, y2 = [int(coord * scale) for coord, scale in zip([x1, x2, y1, y2], [scale_x, scale_x, scale_y, scale_y])]
-
-    x1 = max(0, x1)
-    x2 = min(original_shape[1], x2)
-    y1 = max(0, y1)
-    y2 = min(original_shape[0], y2)
-    
     face_image = image[y1:y2, x1:x2]
     _, buffer = cv2.imencode('.jpg', face_image)
     return buffer.tobytes()
 
-def get_or_create_person(cursor, name):
+def get_or_create_person(cursor, conn, name):
     cursor.execute("SELECT id FROM person WHERE name = ?", (name,))
     result = cursor.fetchone()
     if result:
-        return result[0] 
+        return result[0]
     cursor.execute("INSERT INTO person (name) VALUES (?)", (name,))
     conn.commit()
-    return cursor.lastrowid  
+    return cursor.lastrowid
 
-def store_photo_data(cursor, person_id, last_seen, timestamp, image_blob):
+def store_photo_data(cursor, conn, person_id, last_seen, timestamp, image_blob):
     cursor.execute("INSERT INTO photos (person_id, last_seen, timestamp, image) VALUES (?, ?, ?, ?)", 
                    (person_id, last_seen, timestamp, image_blob))
     conn.commit()
 
-def update_last_seen(cursor, person_id, last_seen):
+def update_last_seen(cursor, conn, person_id, last_seen):
     cursor.execute("UPDATE photos SET last_seen = ? WHERE person_id = ?", (last_seen, person_id))
     conn.commit()
 
-def update_timestamp(cursor, person_id, timestamp):
+def update_timestamp(cursor, conn, person_id, timestamp):
     cursor.execute("UPDATE photos SET timestamp = ? WHERE person_id = ?", (timestamp, person_id))
     conn.commit()
 
 def retrieve_last_seen(cursor, person_id):
     cursor.execute("SELECT last_seen FROM photos WHERE person_id = ?", (person_id,))
     result = cursor.fetchone()
-    if result:
-        return result[0]
-    return None
+    return result[0] if result else None
 
-conn = connect_db()
-cursor = conn.cursor()
-known_face_encodings, known_face_names = load_encodings_from_db(cursor)
+def main():
+    conn = connect_db()
+    cursor = conn.cursor()
+    known_face_encodings, known_face_names = load_encodings_from_db(cursor)
 
-cap = None
-for i in range(4):
-    cap = cv2.VideoCapture(i)
-    if cap.isOpened():
-        print(f"Using camera with index {i}")
-        break
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Camera not found or cannot be opened.")
+        conn.close()
+        return
 
-if not cap.isOpened():
-    print("Camera not found or cannot be opened.")
-    conn.close()
-    exit()
+    face_detection_times = {}
+    last_seen_times = {}
+    unknown_person_count = 0  
+    timeout_duration = 2  
 
-face_detection_times = {}
-last_seen_times = {}
-unknown_person_count = 0  
-timeout_duration = 2  
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                print("Failed to grab frame")
+                break
 
-try:
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Failed to grab frame")
-            break
+            original_shape = frame.shape
+            frame_small = cv2.resize(frame, (640, 480))
+            rgb_frame = cv2.cvtColor(frame_small, cv2.COLOR_BGR2RGB)
+            
+            face_locations = face_recognition.face_locations(rgb_frame)
+            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
 
-        original_shape = frame.shape
-        frame_small = cv2.resize(frame, (640, 480))
-        rgb_frame = cv2.cvtColor(frame_small, cv2.COLOR_BGR2RGB)
-        
-        face_locations = face_recognition.face_locations(rgb_frame)
-        face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+            current_time = time.time()
+            timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time))
+            current_detected_person_ids = []
 
-        current_time = time.time()
-        timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time))
+            for face_encoding, face_loc in zip(face_encodings, face_locations):
+                matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
+                name = "Unknown"
 
-        current_detected_person_ids = []
+                if True in matches:
+                    first_match_index = matches.index(True)
+                    name = known_face_names[first_match_index]
+                else:
+                    unknown_person_count += 1
 
-        for face_encoding, face_loc in zip(face_encodings, face_locations):
-            matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
-            name = "Unknown"
+                person_id = get_or_create_person(cursor, conn, name)
+                if name == "Unknown":
+                    image_blob = save_snapshot(frame, face_loc)
+                    store_photo_data(cursor, conn, person_id, timestamp_str, "0:00:00", image_blob)
+                    known_face_encodings.append(face_encoding)
+                    known_face_names.append(name)
+                else:
+                    update_last_seen(cursor, conn, person_id, timestamp_str)
 
-            if True in matches:
-                first_match_index = matches.index(True)
-                name = known_face_names[first_match_index]
-                person_id = get_or_create_person(cursor, name)
-                last_seen = retrieve_last_seen(cursor, person_id)
-                update_last_seen(cursor, person_id, timestamp_str)
-            else:
-                unknown_person_count += 1
-                person_id = get_or_create_person(cursor, name)
-                image_blob = save_snapshot(frame, face_loc, original_shape)
-                store_photo_data(cursor, person_id, timestamp_str, "0:00:00", image_blob)
-                known_face_encodings.append(face_encoding)
-                known_face_names.append(name)
+                current_detected_person_ids.append(person_id)
 
-            current_detected_person_ids.append(person_id)
+                if person_id not in face_detection_times:
+                    face_detection_times[person_id] = current_time  
+                    last_seen_times[person_id] = current_time 
 
-            identifier = person_id
+                last_seen_times[person_id] = current_time
 
-            if identifier not in face_detection_times:
-                face_detection_times[identifier] = current_time  
-                last_seen_times[identifier] = current_time 
+                elapsed_time = current_time - face_detection_times[person_id]
+                hours, remainder = divmod(int(elapsed_time), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                time_str = f"{hours:02}:{minutes:02}:{seconds:02}"
 
-            last_seen_times[identifier] = current_time
+                update_timestamp(cursor, conn, person_id, time_str)
 
-            elapsed_time = current_time - face_detection_times[identifier]
-            hours, remainder = divmod(int(elapsed_time), 3600)
-            minutes, seconds = divmod(remainder, 60)
-            time_str = f"{hours:02}:{minutes:02}:{seconds:02}"
+                b, g, r = (0, 0, 255) if name == "Unknown" else (0, 255, 0)
 
-            update_timestamp(cursor, person_id, time_str)
+                scale_x = original_shape[1] / 640
+                scale_y = original_shape[0] / 480
+                y1, x2, y2, x1 = [int(coord * scale) for coord, scale in zip(face_loc, [scale_y, scale_x, scale_y, scale_x])]
 
-            b, g, r = (0, 0, 255) if name == "Unknown" else (0, 255, 0)
+                cv2.putText(frame, f"{name} - {time_str}", (x1, y2 + 30), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1.5, (b, g, r), 2)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (b, g, r), 2)
 
-            scale_x = original_shape[1] / 640
-            scale_y = original_shape[0] / 480
-            y1, x2, y2, x1 = [int(coord * scale) for coord, scale in zip(face_loc, [scale_y, scale_x, scale_y, scale_x])]
+            for person_id in list(last_seen_times.keys()):
+                if person_id not in current_detected_person_ids:
+                    if current_time - last_seen_times[person_id] > timeout_duration:
+                        del face_detection_times[person_id] 
+                        del last_seen_times[person_id]  
 
-            font_scale = 1.5
-            cv2.putText(frame, f"{name} - {time_str}", (x1, y2 + 30), cv2.FONT_HERSHEY_COMPLEX_SMALL, font_scale, (b, g, r), 2)
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (b, g, r), 2)
+            cv2.imshow("Frame", frame)
 
-        for person_id in list(last_seen_times.keys()):
-            if person_id not in current_detected_person_ids:
-                if current_time - last_seen_times[person_id] > timeout_duration:
-                    del face_detection_times[person_id] 
-                    del last_seen_times[person_id]  
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+        conn.close()
 
-        cv2.imshow("Frame", frame)
-
-        key = cv2.waitKey(1)
-        if key == ord("q"):
-            break
-finally:
-    cap.release()
-    cv2.destroyAllWindows()
-    conn.close()
+if __name__ == "__main__":
+    main()
