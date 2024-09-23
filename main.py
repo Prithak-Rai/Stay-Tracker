@@ -55,7 +55,7 @@ def update_last_seen(cursor, conn, person_id, last_seen):
     conn.commit()
 
 def update_timestamp(cursor, conn, person_id, timestamp):
-    # Convert the new timestamp to a timedelta object
+
     try:
         t1 = datetime.strptime(timestamp, '%H:%M:%S') - datetime(1900, 1, 1)
     except ValueError as e:
@@ -64,7 +64,6 @@ def update_timestamp(cursor, conn, person_id, timestamp):
 
     print(f"New timestamp (t1): {t1}")
 
-    # Fetch the last known timestamp (`x`) from the database
     cursor.execute("SELECT timestamp FROM photos WHERE person_id = ? ORDER BY id DESC LIMIT 1", (person_id,))
     last_timestamp = cursor.fetchone()
     
@@ -79,11 +78,8 @@ def update_timestamp(cursor, conn, person_id, timestamp):
 
     print(f"Last known timestamp (x): {x}")
 
-    # Check if the new timestamp `t1` is greater than the previous timestamp `x`
     if t1 > x:
-        # Update `x` to the new timestamp `t1`
 
-        # Fetch the current total_time_spent from the database
         cursor.execute("SELECT total_time_spent FROM person WHERE id = ?", (person_id,))
         t2 = cursor.fetchone()
         print(f"Current total_time_spent from DB: {t2}")
@@ -99,18 +95,15 @@ def update_timestamp(cursor, conn, person_id, timestamp):
 
         print(f"Total time spent (total): {total}")
 
-        # Add the new time to the total time
-        total_time = total + timedelta(seconds=1)  # Add 1 second
+        total_time = total + timedelta(seconds=1)  
         print(f"Updated total time (total_time): {total_time}")
 
-        # Convert total_time (timedelta) back to 'HH:MM:SS' format
         total_seconds = int(total_time.total_seconds())
         hours, remainder = divmod(total_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
         str_total = f'{hours:02}:{minutes:02}:{seconds:02}'
         print(f"Formatted total_time_spent: {str_total}")
 
-        # Update the timestamp and total_time_spent in the database
         try:
             cursor.execute("UPDATE photos SET timestamp = ? WHERE person_id = ?", (timestamp, person_id))
             cursor.execute("UPDATE person SET total_time_spent = ? WHERE id = ?", (str_total, person_id))
@@ -206,7 +199,6 @@ try:
 
             update_timestamp(cursor, conn, person_id, time_str)
 
-            # Update total time spent
             duration = calculate_duration(retrieve_last_seen(cursor, person_id), current_time)
 
             b, g, r = (0, 0, 255) if name == "Unknown" else (0, 255, 0)
