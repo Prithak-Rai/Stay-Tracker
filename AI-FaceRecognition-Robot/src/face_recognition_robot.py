@@ -28,6 +28,7 @@ preprocess = transforms.Compose([
     transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
 ])
 
+
 # Connect to the DB
 conn = sqlite3.connect("faces.db")
 cursor = conn.cursor()
